@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>4K to 1080p Video Converter</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .upload-container {
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            padding: 30px;
+            text-align: center;
+            margin: 20px 0;
+            transition: border-color 0.3s;
+        }
+        .upload-container:hover {
+            border-color: #0078d7;
+        }
+        .hidden {
+            display: none;
+        }
+        .btn {
+            background-color: #0078d7;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 0;
+            transition: background-color 0.3s;
+        }
+        .btn:hover {
+            background-color: #005fa3;
+        }
+        .btn:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        #progress-container {
+            margin-top: 20px;
+        }
+        progress {
+            width: 100%;
+            height: 20px;
+        }
+        .status {
+            text-align: center;
+            margin: 10px 0;
+            font-weight: bold;
+        }
+        #video-preview {
+            max-width: 100%;
+            margin: 20px 0;
+        }
+        #log {
+            background-color: #f0f0f0;
+            border-radius: 4px;
+            padding: 10px;
+            margin-top: 20px;
+            max-height: 150px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>4K to 1080p Video Converter</h1>
+        <p>Upload your 4K video and convert it to 1080p directly in your browser. No data is sent to any server.</p>
+        
+        <div class="upload-container" id="drop-area">
+            <p>Drag & drop your video here or</p>
+            <input type="file" id="file-input" accept="video/*" class="hidden">
+            <button class="btn" id="select-button">Select Video</button>
+        </div>
+        
+        <div id="video-info" class="hidden">
+            <h2>Selected Video</h2>
+            <p id="file-name"></p>
+            <p id="original-resolution"></p>
+            <video id="video-preview" controls></video>
+            <button class="btn" id="convert-button">Convert to 1080p</button>
+        </div>
+        
+        <div id="progress-container" class="hidden">
+            <p class="status" id="status-message">Converting...</p>
+            <progress id="progress-bar" value="0" max="100"></progress>
+            <p id="progress-text">0%</p>
+        </div>
+        
+        <div id="download-container" class="hidden">
+            <h2>Conversion Complete</h2>
+            <p>Your video has been converted to 1080p.</p>
+            <button class="btn" id="download-button">Download</button>
+            <video id="converted-preview" controls></video>
+        </div>
+        
+        <div id="log" class="hidden"></div>
+    </div>
+
+    <script>
+        // DOM Elements
+        const dropArea = document.getElementById('drop-area');
+        const fileInput = document.getElementById('file-input');
+        const selectButton = document.getElementById('select-button');
+        const videoInfo = document.getElementById('video-info');
+        const fileName = document.getElementById('file-name');
+        const originalResolution = document.getElementById('original-resolution');
+        const videoPreview = document.getElementById('video-preview');
+        const convertButton = document.getElementById('convert-button');
+        const progressContainer = document.getElementById('progress-container');
+        const progressBar = document.getElementById('progress-bar');
+        const progressText = document.getElementById('progress-text');
+        const statusMessage = document.getElementById('status-message');
+        const downloadContainer = document.getElementById('download-container');
+        const downloadButton = document.getElementById('download-button');
+        const convertedPreview = document.getElementById('converted-preview');
+        const log = document.getElementById('log');
+        
+        // Global variables
+        let selectedFile = null;
+        let convertedBlob = null;
+        
+        // Initialize drag and drop
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, preventDefaults, false);
+        });
+        
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropArea.addEventListener(eventName, highlight, false);
+        });
+        
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, unhighlight, false);
+        });
+        
+        function highlight() {
+            dropArea.style.borderColor = '#0078d7';
+        }
+        
+        function unhighlight() {
+            dropArea.style.borderColor = '#ccc';
+        }
+        
+        dropArea.addEventListener('drop', handleDrop, false);
+        
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            
+            if (files.length) {
+                handleFiles(files);
+            }
+        }
+        
+        // File selection button
+        selectButton.addEventListener('click', () => {
+            fileInput.click();
+        });
+        
+        fileInput.addEventListener('change', (e) => {
+            handleFiles(e.target.files);
+        });
+        
+        function handleFiles(files) {
+            if (files.length === 0) return;
+            
+            const file = files[0];
+            
+            // Check if it's a video
+            if (!file.type.startsWith('video/')) {
+                alert('Please select a video file.');
+                return;
+            }
+            
+            selectedFile = file;
+            fileName.textContent = `File: ${file.name}`;
+            
+            // Create video object URL for preview
+            const videoURL = URL.createObjectURL(file);
+            videoPreview.src = videoURL;
+            
+            // Listen for video metadata to get resolution
+            videoPreview.onloadedmetadata = () => {
+                originalResolution.textContent = `Original Resolution: ${videoPreview.videoWidth}x${videoPreview.videoHeight}`;
+                
+                // Only enable conversion if resolution is higher than 1080p
+                if (videoPreview.videoHeight > 1080) {
+                    convertButton.disabled = false;
+                    logMessage(`Video resolution: ${videoPreview.videoWidth}x${videoPreview.videoHeight} - Ready for conversion to 1080p`);
+                } else {
+                    convertButton.disabled = true;
+                    logMessage(`Video resolution: ${videoPreview.videoWidth}x${videoPreview.videoHeight} - Already 1080p or lower`);
+                    alert('This video is already 1080p or lower resolution.');
+                }
+            };
+            
+            videoInfo.classList.remove('hidden');
+            log.classList.remove('hidden');
+        }
+        
+        // Convert button
+        convertButton.addEventListener('click', startConversion);
+        
+        function startConversion() {
+            if (!selectedFile) return;
+            
+            logMessage('Starting conversion process...');
+            videoInfo.classList.add('hidden');
+            progressContainer.classList.remove('hidden');
+            
+            // Create an off-screen canvas for processing
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            
+            // Set target width and height (1080p)
+            const targetHeight = 1080;
+            const targetWidth = Math.floor(targetHeight * (videoPreview.videoWidth / videoPreview.videoHeight));
+            
+            canvas.width = targetWidth;
+            canvas.height = targetHeight;
+            
+            logMessage(`Converting to: ${targetWidth}x${targetHeight}`);
+            
+            // Set up MediaRecorder for capturing the output
+            const stream = canvas.captureStream(30); // 30fps
+            const mediaRecorder = new MediaRecorder(stream, {
+                mimeType: 'video/webm;codecs=vp9', // Use VP9 codec for better quality
+                videoBitsPerSecond: 8000000 // 8 Mbps bitrate
+            });
+            
+            const chunks = [];
+            mediaRecorder.ondataavailable = (e) => {
+                if (e.data.size > 0) {
+                    chunks.push(e.data);
+                }
+            };
+            
+            mediaRecorder.onstop = () => {
+                convertedBlob = new Blob(chunks, { type: 'video/webm' });
+                convertedPreview.src = URL.createObjectURL(convertedBlob);
+                progressContainer.classList.add('hidden');
+                downloadContainer.classList.remove('hidden');
+                logMessage('Conversion complete!');
+            };
+            
+            // Start recording
+            mediaRecorder.start(1000); // Collect data every second
+            
+            // Create audio context for processing audio
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const audioDestination = audioContext.createMediaStreamDestination();
+            
+            // Process video frames
+            const video = videoPreview.cloneNode();
+            video.src = videoPreview.src;
+            video.muted = true;
+            
+            video.onloadedmetadata = async () => {
+                // Process audio
+                const audioSource = document.createElement('audio');
+                audioSource.src = videoPreview.src;
+                
+                const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                const audioSourceNode = audioContext.createMediaStreamSource(audioStream);
+                audioSourceNode.connect(audioDestination);
+                
+                // Add audio track to the canvas stream
+                const combinedStream = new MediaStream([
+                    ...stream.getVideoTracks(),
+                    ...audioDestination.stream.getAudioTracks()
+                ]);
+                
+                // Play the video
+                video.play();
+                
+                const totalFrames = video.duration * 30; // Assuming 30fps
+                let frameCount = 0;
+                
+                // Frame processing function
+                function processFrame() {
+                    if (video.ended || video.paused) {
+                        mediaRecorder.stop();
+                        return;
+                    }
+                    
+                    // Draw current frame to canvas at 1080p resolution
+                    ctx.drawImage(video, 0, 0, targetWidth, targetHeight);
+                    
+                    // Update progress
+                    frameCount++;
+                    const progress = Math.min((frameCount / totalFrames) * 100, 100);
+                    progressBar.value = progress;
+                    progressText.textContent = `${Math.round(progress)}%`;
+                    statusMessage.textContent = `Converting: ${Math.round(progress)}%`;
+                    
+                    // Request next frame
+                    requestAnimationFrame(processFrame);
+                }
+                
+                // Start processing frames
+                processFrame();
+            };
+            
+            video.load();
+        }
+        
+        // Download button
+        downloadButton.addEventListener('click', () => {
+            if (!convertedBlob) return;
+            
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(convertedBlob);
+            a.download = `${selectedFile.name.split('.')[0]}_1080p.webm`;
+            a.click();
+            
+            logMessage(`Downloaded as: ${a.download}`);
+        });
+        
+        // Logging function
+        function logMessage(message) {
+            const time = new Date().toLocaleTimeString();
+            log.innerHTML += `[${time}] ${message}<br>`;
+            log.scrollTop = log.scrollHeight;
+        }
+        
+        // Initial log message
+        logMessage('Video converter loaded. Upload a 4K video to start.');
+    </script>
+</body>
+</html>
